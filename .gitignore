@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.db
+airflow/
+logs/
+reports/
+.env

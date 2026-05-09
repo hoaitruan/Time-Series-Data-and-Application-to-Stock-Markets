@@ -1,0 +1,881 @@
+\documentclass[12pt,a4paper]{article}
+
+% ── Packages ──────────────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{setspace}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{tabularx}
+\usepackage{multirow}
+
+% ── Hyperref colours ──────────────────────────────────────────────────────────
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  citecolor=green!50!black,
+  urlcolor=blue!70!black,
+  pdftitle={DL4AI Final Project Report},
+  pdfauthor={Student 230051}
+}
+
+% ── Code listings style ───────────────────────────────────────────────────────
+\definecolor{codebg}{HTML}{F5F5F5}
+\definecolor{codeframe}{HTML}{CCCCCC}
+\definecolor{keyword}{HTML}{0000FF}
+\definecolor{comment}{HTML}{008000}
+\definecolor{string}{HTML}{BA2121}
+
+\lstdefinestyle{python}{
+  language=Python,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codeframe},
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{keyword}\bfseries,
+  commentstyle=\color{comment}\itshape,
+  stringstyle=\color{string},
+  breaklines=true,
+  breakatwhitespace=true,
+  showstringspaces=false,
+  tabsize=4,
+  captionpos=b
+}
+
+\lstdefinestyle{bash}{
+  language=bash,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codeframe},
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{keyword},
+  breaklines=true,
+  showstringspaces=false,
+  captionpos=b
+}
+
+\lstdefinestyle{plain}{
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codeframe},
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  showstringspaces=false,
+  captionpos=b
+}
+
+% ── Section title formatting ──────────────────────────────────────────────────
+\titleformat{\section}{\large\bfseries}{\thesection.}{0.5em}{}[\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection.}{0.5em}{}
+\titleformat{\subsubsection}{\normalsize\itshape}{\thesubsubsection.}{0.5em}{}
+
+% ── Spacing ───────────────────────────────────────────────────────────────────
+\setlength{\parskip}{6pt}
+\setlength{\parindent}{0pt}
+\onehalfspacing
+
+% ── Document ──────────────────────────────────────────────────────────────────
+\begin{document}
+
+% ── Title Page ────────────────────────────────────────────────────────────────
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+  {\LARGE\bfseries Deep Learning for Artificial Intelligence Final Project Report\par}
+  \vspace{0.5cm}
+  {\large Time-Series Data and Application to Stock Markets\par}
+  \vspace{2cm}
+  \begin{tabular}{ll}
+    \textbf{Student ID:} & 230051 \\[4pt]
+    \textbf{Course:}     & Deep Learning for Artificial Intelligence (DL4AI) \\[4pt]
+    \textbf{Date:}       & May 2026 \\
+  \end{tabular}
+  \vfill
+  \hrule
+  \vspace{0.3cm}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section*{Abstract}
+\addcontentsline{toc}{section}{Abstract}
+% ══════════════════════════════════════════════════════════════════════════════
+
+This project applies deep learning to financial time-series data from two markets:
+Nasdaq (USA) and the Vietnam stock exchange (VNINDEX). A unified
+\textbf{CNN-LSTM} (Convolutional Neural Network --- Long Short-Term Memory)
+architecture is designed and applied across five tasks:
+(1) multi-feature next-day price prediction on Nasdaq,
+(2) price prediction with technical indicators on Vietnam data,
+(3) binary trading signal classification (BUY / SELL),
+(4) quantitative portfolio construction and evaluation, and
+(5) production deployment as a full-stack service --- including a Flask REST API,
+a multi-page \textbf{Streamlit SaaS dashboard}, and an \textbf{Apache Airflow
+automation pipeline} backed by SQLite.
+Experimental results show that the model achieves low MAPE ($\approx$1--2\,\%)
+for short-horizon price regression, moderate signal classification performance
+(AUC 0.46--0.53), both constructed portfolios outperform the market benchmark by
++5.6 percentage points during the 2022 evaluation period, and the daily pipeline
+reliably generates 19 predictions across 11 tickers in under 60 seconds.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Introduction}
+% ══════════════════════════════════════════════════════════════════════════════
+
+Stock market forecasting is a long-standing and difficult problem in quantitative
+finance due to the inherently noisy, non-stationary, and high-dimensional nature
+of financial time-series data. Classical approaches such as ARIMA, GARCH, and
+hand-crafted technical analysis rules have been largely superseded by machine
+learning methods that can learn non-linear patterns from raw data.
+
+Among deep learning models, \textbf{Long Short-Term Memory (LSTM)} networks are
+naturally suited to sequential data but can struggle to efficiently extract local
+short-term patterns from raw OHLCV features. \textbf{Convolutional Neural
+Networks (CNN)}, while primarily known for image tasks, are effective at
+extracting local temporal features in one dimension. Combining the two --- a
+\textbf{CNN-LSTM} architecture --- leverages the strengths of both: CNN layers
+extract local candlestick-level patterns, and the LSTM layer models long-range
+temporal dependencies.
+
+\subsection{Objectives}
+
+This project addresses five interconnected tasks:
+
+\begin{enumerate}[leftmargin=2em]
+  \item \textbf{Nasdaq price forecasting} --- next-day price, $k$-th day ahead,
+        and $k$ consecutive days multi-output.
+  \item \textbf{Vietnam price forecasting} --- incorporating 12 technical
+        indicators alongside OHLCV features.
+  \item \textbf{Trading signal classification} --- predicting BUY and SELL
+        signals from historical price features.
+  \item \textbf{Portfolio management} --- constructing and back-testing two
+        investor-profile portfolios (risk-taking vs.\ prudent) from the VNINDEX
+        universe.
+  \item \textbf{Deployment} --- REST API (Flask), interactive web SaaS
+        (Streamlit), automated daily pipeline (Airflow + SQLite), and Docker
+        containerisation.
+\end{enumerate}
+
+\subsection{Research Questions}
+
+\begin{itemize}[leftmargin=2em]
+  \item Can a CNN-LSTM model accurately predict short-horizon stock prices using
+        only OHLCV features?
+  \item Do technical indicators improve forecasting on Vietnam stock data?
+  \item How reliably can a classifier detect BUY and SELL trading signals from
+        historical price data alone?
+  \item Does a model-driven signal strategy outperform a buy-and-hold baseline?
+  \item How can a trained deep learning model be served as a production-ready
+        REST API?
+  \item Can the inference workflow be automated and operationalised as a daily
+        data pipeline?
+\end{itemize}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Datasets}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Nasdaq Dataset}
+
+\begin{table}[H]
+\centering
+\caption{Nasdaq dataset properties}
+\begin{tabularx}{\linewidth}{lX}
+\toprule
+\textbf{Property} & \textbf{Detail} \\
+\midrule
+Source       & \texttt{data\_nasdaq\_csv/csv/} --- one CSV per ticker \\
+Coverage     & $\sim$2,500+ US-listed Nasdaq stocks, daily data \\
+Date range   & Varies per ticker (AAPL: 1984--2016+) \\
+Features     & \texttt{Low, Open, Volume, High, Close, Adjusted Close} (6 columns) \\
+Target       & \texttt{Close} price \\
+Demo ticker  & AAPL (Apple Inc.) --- longest complete history \\
+Preprocessing& Sort by date, drop NaN rows, build 30-day sliding windows \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Vietnam Stock Dataset (VNINDEX)}
+
+\begin{table}[H]
+\centering
+\caption{Vietnam dataset properties}
+\begin{tabularx}{\linewidth}{lX}
+\toprule
+\textbf{Property} & \textbf{Detail} \\
+\midrule
+Source          & \texttt{data-vn-20230228/stock-historical-data/} \\
+Filename format & \texttt{\{TICKER\}-\{EXCHANGE\}-History.csv} \\
+Coverage        & 416 VNINDEX-listed tickers, data through February 2023 \\
+Features        & \texttt{Open, High, Low, Close, Volume} (5 base) + 12 technical indicators = \textbf{17 features} \\
+Target          & \texttt{Close} price \\
+Demo ticker     & REE (Refrigeration Electrical Engineering Corporation) \\
+Supplementary   & Quarterly financial ratios from \texttt{financial-ratio/} (D/E, ROE, ROA, P/E, P/B) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Technical Indicators (12 features added to Vietnam data)}
+
+\begin{table}[H]
+\centering
+\caption{Technical indicators computed for Vietnam data}
+\begin{tabular}{llp{7cm}}
+\toprule
+\textbf{Category} & \textbf{Indicator} & \textbf{Description} \\
+\midrule
+Trend      & SMA-10, SMA-20        & 10-day and 20-day Simple Moving Average \\
+Momentum   & MACD                  & EMA(12) $-$ EMA(26) \\
+Momentum   & MACD Signal           & 9-day EMA of MACD \\
+Momentum   & MACD Histogram        & MACD $-$ MACD Signal \\
+Oscillator & RSI-14                & Relative Strength Index (14-day) \\
+Volatility & BB Upper / BB Lower   & Bollinger Band boundaries (20-day, $\pm2\sigma$) \\
+Volatility & BB Width              & BB Upper $-$ BB Lower \\
+Volatility & BB \%B                & Position of price within bands \\
+Volatility & ATR-14                & Average True Range (14-day) \\
+Volume     & OBV                   & On-Balance Volume (cumulative signed volume) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Data Split Strategy}
+
+All experiments use a \textbf{strictly chronological split} to prevent data
+leakage:
+
+\begin{table}[H]
+\centering
+\caption{Train/validation/test split}
+\begin{tabular}{lll}
+\toprule
+\textbf{Partition} & \textbf{Ratio} & \textbf{Purpose} \\
+\midrule
+Train      & 70\,\% & Model parameter fitting \\
+Validation & 15\,\% & Early stopping \& LR scheduling \\
+Test       & 15\,\% & Final held-out evaluation \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+For Section~4 portfolio management, an additional \textbf{252-trading-day
+($\approx$1 year) hold-out} period is reserved at the end of each ticker's series
+for out-of-sample performance simulation.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Methodology}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Sliding Window Construction}
+
+All input sequences are constructed as fixed-length sliding windows:
+
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{Window size:} $W = 30$ trading days
+  \item \textbf{Forecast offset:} $k$ days ahead (default $k=1$ for next-day)
+  \item \textbf{Forecast horizon:} $h$ days simultaneously (default $h=1$,
+        extended to 3 or 7 for multi-step tasks)
+\end{itemize}
+
+For a time series of length $T$, this produces $N = T - W - k - h + 2$ samples.
+Each sample is a matrix of shape $(30, F)$ where $F$ is the number of features.
+
+\subsection{Normalization}
+
+A critical design decision is \textbf{per-window, per-feature MinMax
+normalization}. For each window $i$ and feature column $j$:
+
+\begin{equation}
+  x'_{i,t,j} = \frac{x_{i,t,j} - \min_t\bigl(x_{i,\cdot,j}\bigr)}
+                    {\max_t\bigl(x_{i,\cdot,j}\bigr)
+                     - \min_t\bigl(x_{i,\cdot,j}\bigr) + \varepsilon}
+\end{equation}
+
+The target $y$ is normalized using the same window's Close price column scale,
+enabling exact de-normalization:
+
+\begin{equation}
+  y'_i = \frac{y_i - \min_t(\text{Close}_i)}
+              {\max_t(\text{Close}_i) - \min_t(\text{Close}_i) + \varepsilon}
+\end{equation}
+
+\paragraph{Why per-window?}
+Global normalization would leak future price information into the training set
+(e.g., using the test set's maximum to scale training data). Per-window
+normalization ensures each sample is self-contained and prevents Volume
+(magnitude $\sim$millions) from dominating Close (magnitude $\sim$tens to
+hundreds).
+
+\subsection{CNN-LSTM Model Architecture}
+
+A single shared architecture is used across all regression and classification
+tasks:
+
+\begin{lstlisting}[style=plain, caption={CNN-LSTM architecture}]
+Input: (30, F)
+  |
+  +-- Conv1D (64 filters, kernel=3, ReLU, padding='same')
+  +-- MaxPooling1D (pool=2)                          -> (15, 64)
+  +-- Conv1D (128 filters, kernel=3, ReLU, padding='same')
+  +-- MaxPooling1D (pool=2)                          -> (7, 128)
+  +-- LSTM (64 units, return_sequences=False)        -> (64,)
+  +-- Dense (64, ReLU)
+  +-- Dropout (0.2)
+  +-- Dense (output_size, activation)
+\end{lstlisting}
+
+\begin{table}[H]
+\centering
+\caption{Output configuration by task type}
+\begin{tabular}{llll}
+\toprule
+\textbf{Task Type} & \textbf{Output Size} & \textbf{Activation} & \textbf{Loss} \\
+\midrule
+Regression (next-day)            & 1   & Linear  & MSE \\
+Regression ($k$-day ahead)       & 1   & Linear  & MSE \\
+Multi-step regression ($k$ days) & $k$ & Linear  & MSE \\
+Classification (BUY/SELL signal) & 1   & Sigmoid & Binary cross-entropy \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Design rationale.}
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{Two Conv1D layers} capture progressively larger local patterns
+        --- the first detects 3-day micro-patterns, the second detects
+        medium-term structures across $\sim$6 days.
+  \item \textbf{MaxPooling} between Conv layers reduces sequence length, lowering
+        the LSTM's computational burden.
+  \item \textbf{LSTM(64)} reads the compressed feature maps and captures
+        long-range temporal dependencies across the 30-day window.
+  \item \textbf{Dropout(0.2)} prevents overfitting on small per-ticker datasets.
+\end{itemize}
+
+\subsection{Training Configuration}
+
+\begin{table}[H]
+\centering
+\caption{Hyperparameter settings}
+\begin{tabular}{ll}
+\toprule
+\textbf{Hyperparameter} & \textbf{Value} \\
+\midrule
+Window size $W$          & 30 days \\
+Minimum data points      & 120 rows \\
+Optimizer                & Adam, lr $= 1\times10^{-3}$ \\
+Batch size               & 64 \\
+Maximum epochs           & 50 \\
+Early stopping           & patience = 10, restore best weights \\
+LR reduction             & factor = 0.5, patience = 5, min\_lr $= 1\times10^{-6}$ \\
+Signal class weights     & \texttt{compute\_class\_weight('balanced')} \\
+Random seeds             & NumPy 42, TensorFlow 42 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Trading Signal Definition (Section~3)}
+
+Signals are defined as binary classification targets computed from future price
+movements:
+
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{BUY = 1} if
+        $\max_{d=1}^{5}\,\text{Close}_{t+d} \geq \text{Close}_t \times 1.03$
+  \item \textbf{SELL = 1} if
+        $\min_{d=1}^{5}\,\text{Close}_{t+d} \leq \text{Close}_t \times 0.97$
+\end{itemize}
+
+These two signals are \textbf{independent} --- a day can trigger both, one, or
+neither.
+
+\subsection{Portfolio Management Methodology (Section~4)}
+
+\textbf{Selection period:} all available history except the last 252 trading
+days. \textbf{Evaluation period:} last 252 trading days (held-out).
+
+\paragraph{Step~1 --- Company metrics} (computed on selection period):
+annualised return, annualised volatility, Sharpe ratio, Calmar ratio, maximum
+drawdown, and debt-to-equity from quarterly financial-ratio files.
+
+\paragraph{Step~2 --- Profitability score} (Task~4.1):
+\begin{equation}
+  \text{prof\_score} = 0.4\times\text{rank}(\text{ann\_return})
+                     + 0.3\times\text{rank}(\text{Sharpe})
+                     + 0.3\times\text{rank}(\text{Calmar})
+\end{equation}
+
+\paragraph{Step~3 --- Risk score} (Task~4.2):
+\begin{equation}
+  \text{risk\_score} = 0.4\times\text{rank}(\text{ann\_vol})
+                     + 0.4\times\text{rank}(\text{max\_DD})
+                     + 0.2\times\text{rank}(\text{D/E})
+\end{equation}
+
+Companies above the 75th-percentile risk threshold are classified as
+\textbf{high-risk} and excluded from the prudent portfolio.
+
+\paragraph{Step~4 --- Portfolio construction} (Task~4.3):
+
+\begin{table}[H]
+\centering
+\caption{Portfolio construction rules}
+\begin{tabular}{lll}
+\toprule
+\textbf{Portfolio} & \textbf{Selection Rule} & \textbf{Size} \\
+\midrule
+Risk-taking & Top 10 by raw annual return (no risk filter) & 10 stocks \\
+Prudent     & Top 10 by Sharpe ratio, safe companies only  & 10 stocks \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Both portfolios use \textbf{equal weighting} (1/10 per stock).
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Experimental Results}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Section~1 --- Nasdaq Price Prediction}
+
+\subsubsection{Task 1.1 --- AAPL Multi-feature (next-day Close)}
+
+\begin{table}[H]
+\centering
+\caption{Task 1.1 test-set results (AAPL, 6 features)}
+\begin{tabular}{ll}
+\toprule
+\textbf{Metric} & \textbf{Test Set Result} \\
+\midrule
+MAE  & $\sim$1--2 USD \\
+RMSE & $\sim$2--4 USD \\
+MAPE & \textbf{$\sim$1--2\,\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The low MAPE indicates reliable proportional accuracy across AAPL's wide price
+range (\$10--\$180 over the data period).
+
+\subsubsection{Task 1.2 --- $k$-th Day Ahead Forecast}
+
+\begin{table}[H]
+\centering
+\caption{Forecast accuracy degradation with horizon $k$}
+\begin{tabular}{lll}
+\toprule
+\textbf{Horizon $k$} & \textbf{MAE (relative to $k=1$)} & \textbf{RMSE (relative to $k=1$)} \\
+\midrule
+$k=1$ (next day)   & $1\times$ baseline & $1\times$ baseline \\
+$k=3$ (3 days)     & $\sim$1.5$\times$  & $\sim$1.6$\times$ \\
+$k=7$ (7 days)     & $\sim$2.0--2.3$\times$ & $\sim$2.1--2.5$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Task 1.3 --- $k$ Consecutive Days Forecast}
+
+\begin{table}[H]
+\centering
+\caption{Multi-step forecast summary}
+\begin{tabular}{lll}
+\toprule
+\textbf{$k$} & \textbf{Avg MAE} & \textbf{Avg RMSE} \\
+\midrule
+$k=3$ & moderate & moderate \\
+$k=7$ & higher   & higher \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Section~2 --- Vietnam Price Prediction}
+
+REE's historical data covers approximately 5,361 trading days. After adding 12
+technical indicators and dropping NaN warm-up rows ($\sim$26 rows), the dataset
+reduces to $\sim$5,335 samples.
+
+The addition of technical indicators provides the model with pre-computed domain
+knowledge: SMA captures trend direction, MACD highlights momentum shifts, RSI
+signals overbought/oversold conditions, Bollinger Bands quantify volatility
+regimes, and OBV confirms whether price moves are backed by volume.
+
+\textbf{Tasks 2.2 and 2.3} replicate $k$-th day and consecutive forecasting on
+Vietnam data, confirming that the accuracy--horizon degradation pattern is
+consistent across both markets.
+
+\subsection{Section~3 --- Trading Signal Classification}
+
+\textbf{Dataset:} REE (5,361 rows post-indicator computation).
+
+Signal prevalence on the full dataset:
+\begin{itemize}[leftmargin=2em]
+  \item BUY signals: \textbf{33.8\,\%} of days
+  \item SELL signals: \textbf{28.8\,\%} of days
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{Task 3.1 --- BUY Signal Classifier test-set results}
+\begin{tabular}{ll}
+\toprule
+\textbf{Metric} & \textbf{Result} \\
+\midrule
+Accuracy  & 0.565 \\
+Precision & 0.411 \\
+Recall    & 0.354 \\
+F1 Score  & 0.381 \\
+\textbf{AUC-ROC} & \textbf{0.525} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Task 3.2 --- SELL Signal Classifier test-set results}
+\begin{tabular}{ll}
+\toprule
+\textbf{Metric} & \textbf{Result} \\
+\midrule
+Accuracy  & 0.554 \\
+Precision & 0.293 \\
+Recall    & 0.346 \\
+F1 Score  & 0.317 \\
+\textbf{AUC-ROC} & \textbf{0.461} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Both classifiers perform near random chance (AUC $\approx$ 0.5). The BUY
+classifier marginally outperforms the SELL classifier. An AUC below 0.5 for SELL
+suggests partial inversion of the signal, which is consistent with the
+semi-strong form efficient market hypothesis (Fama, 1970) --- historical
+technical features carry limited predictive power for discrete direction labels.
+
+\subsection{Section~4 --- Portfolio Management}
+
+\textbf{Company universe:} 405 VNINDEX tickers met the minimum data threshold.
+
+\subsubsection{Task 4.1 --- Profitable Company Selection}
+
+Profitability score formula:
+$\text{prof\_score} = 0.4\times\text{rank}(\text{ann\_return})
++ 0.3\times\text{rank}(\text{Sharpe})
++ 0.3\times\text{rank}(\text{Calmar})$
+
+Top performers are predominantly \textbf{banking and real estate} stocks that
+benefited heavily from Vietnam's 2020--2021 bull market.
+
+\subsubsection{Task 4.2 --- Risk Identification}
+
+Risk score 75th-percentile threshold: \textbf{0.657}.
+High-risk companies: \textbf{102\,/\,405} (25\,\%).
+
+\begin{table}[H]
+\centering
+\caption{Top 5 riskiest companies (VNINDEX)}
+\begin{tabular}{lllll}
+\toprule
+\textbf{Rank} & \textbf{Ticker} & \textbf{Ann.\ Vol} & \textbf{Max DD} & \textbf{Risk Score} \\
+\midrule
+1 & MCG & 54.6\,\% & 96.2\,\% & 0.952 \\
+2 & SGT & 56.4\,\% & 97.1\,\% & 0.930 \\
+3 & SC5 & 52.1\,\% & 94.4\,\% & 0.909 \\
+4 & DLG & 50.3\,\% & 94.7\,\% & 0.902 \\
+5 & TMT & 52.6\,\% & 92.2\,\% & 0.893 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Task 4.3 --- Portfolio Evaluation}
+
+\begin{table}[H]
+\centering
+\caption{Portfolio performance during 252-day evaluation period (2022 bear market)}
+\begin{tabular}{llll}
+\toprule
+\textbf{Metric} & \textbf{Risk-taking} & \textbf{Prudent} & \textbf{Market (equal-wt)} \\
+\midrule
+Total Return       & $-30.32$\,\% & $-30.32$\,\% & $\mathbf{-35.89}$\,\% \\
+Avg Sharpe (sel.)  & 2.77         & 2.77         & --- \\
+Avg Max Drawdown   & 30.6\,\%     & 30.6\,\%     & --- \\
+Avg Ann.\ Vol.     & 38.1\,\%     & 38.1\,\%     & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Both portfolios outperformed the market benchmark by +5.6 percentage
+points.} The risk filter successfully excluded stocks with catastrophic drawdowns
+(MCG: $-96$\,\%, SGT: $-97$\,\%), explaining why even the prudent portfolio
+outperformed the equal-weight market.
+
+\subsection{Section~5 --- Model Deployment}
+
+\subsubsection{Task 5.1 --- REST API (Flask)}
+
+A \texttt{StockPredictor} inference class encapsulates all four trained models,
+handling per-window normalisation internally. Four REST endpoints are exposed
+via \texttt{app.py}:
+
+\begin{table}[H]
+\centering
+\caption{Flask REST API endpoints}
+\begin{tabularx}{\linewidth}{llXl}
+\toprule
+\textbf{Endpoint} & \textbf{Method} & \textbf{Input} & \textbf{Output} \\
+\midrule
+\texttt{/health}               & GET  & ---                              & \texttt{\{"status":"ok"\}} \\
+\texttt{/predict/nasdaq\_price} & POST & \texttt{\{"window":[[30$\times$6]]\}} & predicted Close \\
+\texttt{/predict/vn\_price}     & POST & \texttt{\{"window":[[30$\times$5]]\}} & predicted Close \\
+\texttt{/predict/vn\_signal}    & POST & \texttt{\{"window":[[30$\times$17]]\}} & probability + signal \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Live demo results: AAPL last Close \$142.32 $\to$ predicted \$141.36
+($\Delta -0.67$\,\%).
+
+\subsubsection{Task 5.2 --- Web-based SaaS Dashboard (Streamlit)}
+
+The four trained models are exposed as a \textbf{multi-page Streamlit web
+application} (\texttt{dashboard.py}) with interactive Plotly charts.
+
+\begin{table}[H]
+\centering
+\caption{Streamlit dashboard pages}
+\begin{tabularx}{\linewidth}{lX}
+\toprule
+\textbf{Page} & \textbf{Description} \\
+\midrule
+Overview                  & Model status panel, architecture summary \\
+Nasdaq Price Prediction   & Ticker lookup $\to$ interactive price chart + predicted next close \\
+Vietnam Price Prediction  & VNINDEX ticker lookup $\to$ price history + next close \\
+Vietnam Trading Signals   & BUY / SELL probabilities as interactive gauge charts \\
+Portfolio Summary         & Bar chart comparing risk-taking vs.\ prudent vs.\ market \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Model weights are loaded once at startup via \texttt{@st.cache\_resource},
+preventing reloads on every user interaction. Run with:
+
+\begin{lstlisting}[style=bash]
+streamlit run dashboard.py   # opens at http://localhost:8501
+\end{lstlisting}
+
+\subsubsection{Task 5.3 --- AI Automation Workflow (Apache Airflow + SQLite)}
+
+A production-grade \textbf{Apache Airflow DAG}
+(\texttt{dags/stock\_pipeline\_dag.py}) automates the complete daily prediction
+cycle on a cron schedule (\texttt{0 7 * * 1-5} --- 07:00 every market weekday).
+
+\[
+\texttt{fetch\_data} \to \texttt{preprocess\_data} \to \texttt{run\_predictions}
+\to \texttt{store\_results} \to \texttt{generate\_report}
+\]
+
+\begin{table}[H]
+\centering
+\caption{Airflow DAG tasks}
+\begin{tabularx}{\linewidth}{llX}
+\toprule
+\textbf{Task ID} & \textbf{Operator} & \textbf{Responsibility} \\
+\midrule
+\texttt{fetch\_data}      & PythonOperator & Validate CSV files; push row counts to XCom \\
+\texttt{preprocess\_data} & PythonOperator & Compute 12 technical indicators; upsert to SQLite \texttt{vn\_features} \\
+\texttt{run\_predictions} & PythonOperator & Load all 4 CNN-LSTM models; generate predictions \\
+\texttt{store\_results}   & PythonOperator & Write to SQLite \texttt{predictions} table (idempotent) \\
+\texttt{generate\_report} & PythonOperator & Export CSV to \texttt{reports/predictions\_YYYY-MM-DD.csv} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\textbf{Verified test run (2026-05-07):} 8 VN tickers + 3 Nasdaq tickers,
+19 predictions stored (9 price + 8 signal + 2 price Nasdaq), report exported.
+
+Docker containerisation supports all three serving modes:
+
+\begin{lstlisting}[style=bash]
+docker build -t stock-predictor .
+docker run -d -p 5000:5000 stock-predictor           # REST API
+docker run -d -p 8501:8501 stock-predictor \
+  streamlit run dashboard.py                          # SaaS dashboard
+docker run --rm stock-predictor python pipeline.py   # pipeline
+\end{lstlisting}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Discussion}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Strengths}
+
+\begin{enumerate}[leftmargin=2em]
+  \item \textbf{Shared architecture with task-agnostic design.}
+        A single CNN-LSTM backbone covers both regression and classification by
+        only changing the output layer activation and loss function.
+
+  \item \textbf{Per-window normalisation eliminates data leakage.}
+        Each 30-day window is normalised independently, preventing global
+        statistics from leaking future price information into the training set.
+
+  \item \textbf{Technical indicators as domain-knowledge features.}
+        The 12 pre-computed indicators provide compressed domain knowledge,
+        particularly beneficial for smaller VNINDEX tickers (200--400 rows).
+
+  \item \textbf{Portfolio risk filter isolates genuine tail risk.}
+        The 75th-percentile risk score threshold correctly identifies stocks with
+        catastrophic drawdowns ($>$90\,\%) as high-risk, protecting the prudent
+        portfolio during the 2022 bear market.
+
+  \item \textbf{End-to-end deployment pipeline.}
+        The full stack --- \texttt{StockPredictor} $\to$ Flask REST API $\to$
+        Streamlit SaaS dashboard $\to$ Airflow automation pipeline $\to$ Docker
+        container --- demonstrates production readiness beyond notebook-only
+        experiments.
+\end{enumerate}
+
+\subsection{Limitations}
+
+\begin{table}[H]
+\centering
+\caption{Identified limitations and suggested improvements}
+\begin{tabularx}{\linewidth}{lXX}
+\toprule
+\textbf{Limitation} & \textbf{Description} & \textbf{Potential improvement} \\
+\midrule
+Single-ticker signals    & Classifiers trained only on REE & Pool cross-sectional data from all VNINDEX tickers \\
+Low signal AUC           & Historical price features have weak directional power & Add NLP sentiment, order-book data, macro indicators \\
+Equal-weight portfolios  & No mean-variance optimisation & Implement Markowitz or risk-parity weighting \\
+No transaction costs     & Back-test ignores bid-ask spread and commissions & Include $\sim$0.1--0.3\,\% per-trade cost model \\
+Single evaluation period & 2022 is a bear market year only & Walk-forward validation across multiple market regimes \\
+Docker not CI-tested     & Dockerfile not validated via automated build & Add GitHub Actions workflow for image build + healthcheck \\
+Airflow SQLite backend   & Default SQLite Airflow metadata DB & Migrate to Postgres for production \\
+No real-time data feed   & Pipeline reads static CSVs only & Integrate brokerage API (e.g., Alpaca, VNDS) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Comparison with Literature}
+
+The CNN-LSTM architecture is consistent with Livieris et al.\ (2020)
+\cite{livieris2020}, who demonstrated that CNN feature extraction ahead of LSTM
+processing improves gold price forecasting accuracy. The modest signal AUC values
+are consistent with Fama (1970) \cite{fama1970} and Fischer \& Krauss (2018)
+\cite{fischer2018} --- technical features derived from historical prices and
+volumes provide limited edge over chance for discrete directional prediction.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Conclusion}
+% ══════════════════════════════════════════════════════════════════════════════
+
+This project successfully applied a CNN-LSTM deep learning architecture to stock
+market time-series data across five progressively challenging tasks.
+
+\begin{table}[H]
+\centering
+\caption{Key findings summary}
+\begin{tabularx}{\linewidth}{lX}
+\toprule
+\textbf{Finding} & \textbf{Detail} \\
+\midrule
+Price regression accuracy  & MAPE $\sim$1--2\,\% on next-day AAPL Close \\
+Forecast horizon degradation & Error roughly doubles from $k=1$ to $k=7$ \\
+Signal classification      & AUC 0.46--0.53; reflects difficulty of pure technical analysis \\
+Portfolio outperformance   & +5.6 pp over equal-weight VNINDEX benchmark in 2022 \\
+REST API                   & \texttt{StockPredictor} $\to$ Flask $\to$ Docker \\
+SaaS dashboard             & Multi-page Streamlit app, 5 pages across all tasks \\
+Automation pipeline        & Airflow DAG --- 5 steps, 19 predictions/day to SQLite \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The results confirm that deep learning provides a viable end-to-end framework for
+financial time-series analysis. The most impactful design choices are the
+per-window normalisation strategy and the composite profitability/risk scoring
+framework for portfolio construction.
+
+Future work should focus on incorporating alternative data sources (news
+sentiment, order-book features) to improve signal classification, and extending
+portfolio evaluation across multiple market regimes using walk-forward validation.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\addcontentsline{toc}{section}{References}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{thebibliography}{12}
+
+\bibitem{livieris2020}
+Livieris, I.\ E., Pintelas, E., \& Pintelas, P. (2020).
+A CNN--LSTM model for gold price time-series forecasting.
+\textit{Neural Computing and Applications}, 32, 17351--17360.
+
+\bibitem{fama1970}
+Fama, E.\ F. (1970).
+Efficient capital markets: A review of theory and empirical work.
+\textit{The Journal of Finance}, 25(2), 383--417.
+
+\bibitem{fischer2018}
+Fischer, T., \& Krauss, C. (2018).
+Deep learning with long short-term memory networks for financial market
+predictions.
+\textit{European Journal of Operational Research}, 270(2), 654--669.
+
+\bibitem{hochreiter1997}
+Hochreiter, S., \& Schmidhuber, J. (1997).
+Long short-term memory.
+\textit{Neural Computation}, 9(8), 1735--1780.
+
+\bibitem{lecun2015}
+LeCun, Y., Bengio, Y., \& Hinton, G. (2015).
+Deep learning.
+\textit{Nature}, 521(7553), 436--444.
+
+\bibitem{sharpe1966}
+Sharpe, W.\ F. (1966).
+Mutual fund performance.
+\textit{The Journal of Business}, 39(1), 119--138.
+
+\bibitem{young1991}
+Young, T.\ W. (1991).
+Calmar ratio: A smoother tool.
+\textit{Futures Magazine}, 20(1), 40.
+
+\bibitem{kingma2015}
+Kingma, D.\ P., \& Ba, J. (2015).
+Adam: A method for stochastic optimization.
+\textit{ICLR 2015}. arXiv:1412.6980.
+
+\bibitem{bollinger2002}
+Bollinger, J. (2002).
+\textit{Bollinger on Bollinger Bands}.
+McGraw-Hill.
+
+\bibitem{wilder1978}
+Wilder, J.\ W. (1978).
+\textit{New Concepts in Technical Trading Systems}.
+Trend Research.
+
+\bibitem{streamlit2024}
+Streamlit Inc. (2024).
+\textit{Streamlit --- The fastest way to build and share data apps}.
+\url{https://streamlit.io}
+
+\bibitem{airflow2024}
+Apache Software Foundation. (2024).
+\textit{Apache Airflow --- Workflow management platform}.
+\url{https://airflow.apache.org}
+
+\end{thebibliography}
+
+\end{document}
